@@ -30,7 +30,7 @@ jobs:
             build: |-
               set -e &&
               yarn build --target x86_64-unknown-linux-gnu &&
-              llvm-strip -x delta/index.linux-x86-gnu.node
+              llvm-strip -x delta/index.linux-x64-gnu.node
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
