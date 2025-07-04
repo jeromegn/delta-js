@@ -21,7 +21,7 @@
   },
   "scripts": {
     "artifacts": "napi artifacts",
-    "build": "napi build --platform --release --dts native.d.ts --js native.js && npm run build:ts",
+    "build": "napi build --platform --release --dts native.d.ts --js native.js -o delta -esm && npm run build:ts",
     "build:debug": "napi build --platform --dts native.d.ts --js native.js && npm run build:ts",
     "build:ts": " rm -rf build/; tsc -p tsconfig.build.json; cp ./delta/*.node build/",
     "build:doc": "typedoc --excludeInternal delta/index.ts",
