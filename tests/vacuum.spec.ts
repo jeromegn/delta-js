@@ -121,7 +121,15 @@ test("it only keep last version when retentionHours is set to 0 and dryRun is fa
     path.endsWith(".parquet"),
   );
 
-  expect(originalFiles.intersection(newFiles).size).toEqual(0);
+  const intersection = [];
+
+  for (const f of originalFiles) {
+    if (newFiles.has(f)) {
+      intersection.push(f);
+    }
+  }
+
+  expect(intersection.length).toEqual(0);
   expect(new Set(tombstones).symmetricDifference(originalFiles).size).toEqual(
     0,
   );

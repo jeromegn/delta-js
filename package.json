@@ -13,7 +13,7 @@
     "build"
   ],
   "engines": {
-    "node": ">= 22"
+    "node": ">= 20"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
