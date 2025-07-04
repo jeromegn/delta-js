@@ -7,7 +7,6 @@ use chrono::Duration;
 use deltalake::arrow::ipc::reader::StreamReader;
 use deltalake::datafusion::datasource::provider_as_source;
 use deltalake::datafusion::logical_expr::LogicalPlanBuilder;
-use deltalake::lakefs::LakeFSCustomExecuteHandler;
 use deltalake::operations::vacuum::VacuumBuilder;
 use deltalake::operations::write::WriteBuilder;
 use deltalake::parquet::basic::Compression;
@@ -50,6 +49,8 @@ pub struct AWSConfigKeyCredentials {
   pub aws_access_key_id: String,
   pub aws_secret_access_key: String,
   pub aws_session_token: Option<String>,
+  pub aws_endpoint_url: Option<String>,
+  pub aws_conditional_put: Option<String>,
 }
 
 #[napi(object, js_name = "AWSConfigKeyProfile")]
@@ -384,15 +385,18 @@ impl RawDeltaTable {
   #[napi(catch_unwind)]
   pub async fn history(&self, limit: Option<u8>) -> Result<Vec<String>> {
     let table = self.table.lock().await;
-    let history = table.history(limit.map(|l| l as usize))
+    let history = table
+      .history(limit.map(|l| l as usize))
       .await
       .map_err(JsError::from)
       .map(|s| s.to_owned())?;
 
-    Ok(history
+    Ok(
+      history
         .iter()
         .map(|c| serde_json::to_string(c).map_err(JsError::from).unwrap())
-        .collect())
+        .collect(),
+    )
   }
 
   /// Run the Vacuum command on the Delta Table: list and delete files no longer
@@ -424,10 +428,6 @@ impl RawDeltaTable {
       ) {
         cmd = cmd.with_commit_properties(commit_properties);
       }
-    }
-
-    if log_store.clone().name() == "LakeFSLogStore" {
-      cmd = cmd.with_custom_execute_handler(Arc::new(LakeFSCustomExecuteHandler {}))
     }
 
     // GenericError { source: InvalidVacuumRetentionPeriod { provided: 167, min: 168 } }
@@ -523,10 +523,6 @@ impl RawDeltaTable {
       };
     }
 
-    if log_store.clone().name() == "LakeFSLogStore" {
-      builder = builder.with_custom_execute_handler(Arc::new(LakeFSCustomExecuteHandler {}))
-    }
-
     let updated_table = builder.into_future().await.map_err(JsError::from)?;
 
     table.state = updated_table.state;
@@ -554,6 +550,12 @@ fn get_storage_options(
 
       if let Some(aws_session_token) = credentials_options.aws_session_token {
         options.insert("aws_session_token".to_string(), aws_session_token);
+      }
+      if let Some(aws_endpoint_url) = credentials_options.aws_endpoint_url {
+        options.insert("aws_endpoint_url".to_string(), aws_endpoint_url);
+      }
+      if let Some(aws_conditional_put) = credentials_options.aws_conditional_put {
+        options.insert("aws_conditional_put".to_string(), aws_conditional_put);
       }
     }
     Either::B(profile_options) => {

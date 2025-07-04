@@ -197,3 +197,4 @@ Cargo.lock
 *.node
 build/
 docs/
+delta/**/*.js

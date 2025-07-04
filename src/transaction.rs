@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use deltalake::kernel::Transaction;
-use deltalake::operations::transaction::CommitProperties;
+use deltalake::kernel::{transaction::CommitProperties, Transaction};
 use napi::{bindgen_prelude::FromNapiValue, JsObject, Result};
 use serde_json::{Map, Value};
 

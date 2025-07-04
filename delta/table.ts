@@ -20,6 +20,8 @@ export interface AWSConfigKeyCredentials {
   awsAccessKeyId: string;
   awsSecretAccessKey: string;
   awsSessionToken?: string;
+  awsEndpointUrl?: string;
+  awsConditionalPut?: string;
 }
 
 export interface AWSConfigKeyProfile {
@@ -237,7 +239,7 @@ export class DeltaTable {
   /**
    * Run the history command on the DeltaTable.
    * The operations are returned in reverse chronological order.
-   * 
+   *
    * @param limit the maximum number of commits to return
    * @returns array of commit infos registered in the transaction log
    */
