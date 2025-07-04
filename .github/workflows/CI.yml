@@ -30,14 +30,14 @@ jobs:
             build: |-
               set -e &&
               yarn build --target x86_64-unknown-linux-gnu &&
-              strip delta/index.linux-x86-gnu.node
+              llvm-strip -x delta/index.linux-x86-gnu.node
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
             build: |-
               set -e &&
               yarn build --target aarch64-unknown-linux-gnu &&
-              strip delta/index.linux-arm64-gnu.node
+              llvm-strip -x delta/index.linux-arm64-gnu.node
           - host: macos-latest
             target: aarch64-apple-darwin
             build: |
