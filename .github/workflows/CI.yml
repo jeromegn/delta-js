@@ -50,7 +50,7 @@ jobs:
         uses: actions/setup-node@v4
         if: ${{ !matrix.settings.docker }}
         with:
-          node-version: 18
+          node-version: 20
           cache: yarn
       - name: Install
         uses: dtolnay/rust-toolchain@stable
@@ -86,7 +86,7 @@ jobs:
         uses: actions/setup-node@v4
         if: matrix.settings.target == 'i686-pc-windows-msvc'
         with:
-          node-version: 18
+          node-version: 20
           cache: yarn
           architecture: x86
       - name: Build in docker
@@ -117,7 +117,6 @@ jobs:
           - host: macos-latest
             target: x86_64-apple-darwin
         node:
-          - "18"
           - "20"
     runs-on: ${{ matrix.settings.host }}
     steps:
@@ -147,7 +146,6 @@ jobs:
       fail-fast: false
       matrix:
         node:
-          - "18"
           - "20"
     runs-on: ubuntu-latest
     steps:
@@ -180,7 +178,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: yarn
       - name: Install dependencies
         run: yarn install
