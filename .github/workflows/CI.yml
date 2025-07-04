@@ -32,7 +32,7 @@ jobs:
               set -e &&
               yarn build --target x86_64-unknown-linux-gnu &&
               yarn run build:ts &&
-              strip *.node
+              strip build/*.node
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
@@ -40,13 +40,13 @@ jobs:
               set -e &&
               yarn build --target aarch64-unknown-linux-gnu &&
               yarn run build:ts &&
-              strip *.node
+              strip build/*.node
           - host: macos-latest
             target: aarch64-apple-darwin
             build: |
               yarn build --target aarch64-apple-darwin
               yarn run build:ts
-              strip -x *.node
+              strip build/-x *.node
     name: stable - ${{ matrix.settings.target }} - node@20
     runs-on: ${{ matrix.settings.host }}
     steps:
