@@ -28,7 +28,7 @@
     "prepublishOnly": "napi prepublish -t npm",
     "universal": "napi universal",
     "version": "napi version",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "dependencies": {
     "apache-arrow": "^19.0.1"
