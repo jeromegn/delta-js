@@ -30,20 +30,17 @@ jobs:
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
             build: |-
               set -e &&
-              yarn build --target x86_64-unknown-linux-gnu &&
-              yarn run build:ts
+              yarn build --target x86_64-unknown-linux-gnu
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
             build: |-
               set -e &&
-              yarn build --target aarch64-unknown-linux-gnu &&
-              yarn run build:ts
+              yarn build --target aarch64-unknown-linux-gnu
           - host: macos-latest
             target: aarch64-apple-darwin
             build: |
               yarn build --target aarch64-apple-darwin
-              yarn run build:ts
     name: stable - ${{ matrix.settings.target }} - node@20
     runs-on: ${{ matrix.settings.host }}
     steps:
@@ -95,7 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: ${{ env.APP_NAME }}.*.node
+          path: delta/*.node
           if-no-files-found: error
   test-macOS-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
@@ -179,6 +176,8 @@ jobs:
           path: artifacts
       - name: Move artifacts
         run: yarn artifacts
+      - name: Build TypeScript
+        run: yarn build:ts
       - name: List packages
         run: ls -R ./npm
         shell: bash
