@@ -172,13 +172,17 @@ jobs:
           cache: yarn
       - name: Install dependencies
         run: yarn install
-      - name: Download all artifacts
+      # - name: Download all artifacts
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     path: artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: delta
       - name: Move artifacts
         run: |
-          yarn artifacts -o delta
+          # yarn artifacts -o delta
           ls -lah delta
       - name: Build TypeScript
         run: yarn build:ts
