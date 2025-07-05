@@ -177,7 +177,7 @@ jobs:
         with:
           path: artifacts
       - name: Move artifacts
-        run: yarn artifacts
+        run: yarn artifacts -o delta
       - name: Build TypeScript
         run: yarn build:ts
       - name: List packages
