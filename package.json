@@ -23,7 +23,7 @@
     "artifacts": "napi artifacts",
     "build": "napi build --platform --release --dts native.d.ts --js native.js -o delta --esm",
     "build:debug": "napi build --platform --dts native.d.ts --js native.js && npm run build:ts",
-    "build:ts": " rm -rf build/; tsc -p tsconfig.build.json; cp ./delta/*.node build/",
+    "build:ts": " rm -rf build/; tsc -p tsconfig.build.json",
     "build:doc": "typedoc --excludeInternal delta/index.ts",
     "prepublishOnly": "napi prepublish -t npm",
     "universal": "napi universal",

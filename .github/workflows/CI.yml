@@ -180,10 +180,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: delta
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
       - name: Move artifacts
         run: |
           # yarn artifacts -o delta
-          ls -lah delta
+          ls -R delta
+          ls -R artifacts
       - name: Build TypeScript
         run: yarn build:ts
       - name: List packages
@@ -204,5 +209,4 @@ jobs:
             echo "Not a release, skipping publish"
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

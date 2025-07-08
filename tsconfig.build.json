@@ -1,14 +1,4 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["./delta/*"],
-  "exclude": ["./delta/native.d.ts"],
-  "compilerOptions": {
-    "target": "ES2020",
-    "strict": true,
-    "lib": ["ESNext"],
-    "moduleResolution": "node",
-    "module": "ESNext",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
-  }
+  "include": ["./delta/*"]
 }
