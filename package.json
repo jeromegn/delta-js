@@ -41,16 +41,12 @@
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"
   },
-  "optionalDependencies": {},
   "napi": {
-    "name": "deltalake",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "aarch64-apple-darwin",
-        "aarch64-unknown-linux-gnu",
-        "x86_64-unknown-linux-gnu"
-      ]
-    }
+    "binaryName": "deltalake",
+    "targets": [
+      "aarch64-apple-darwin",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-gnu"
+    ]
   }
 }
