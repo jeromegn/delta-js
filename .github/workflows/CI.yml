@@ -186,9 +186,7 @@ jobs:
           path: artifacts
       - name: Move artifacts
         run: |
-          # yarn artifacts -o delta
-          ls -R delta
-          ls -R artifacts
+          yarn artifacts
       - name: Build TypeScript
         run: yarn build:ts
       - name: List packages
