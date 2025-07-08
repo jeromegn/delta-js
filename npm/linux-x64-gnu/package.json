@@ -1,5 +1,5 @@
 {
-  "name": "@delta-js/delta-js-linux-x64-gnu",
+  "name": "deltalake-linux-x64-gnu",
   "version": "0.0.0",
   "os": [
     "linux"
@@ -7,9 +7,9 @@
   "cpu": [
     "x64"
   ],
-  "main": "delta-js.linux-x64-gnu.node",
+  "main": "deltalake.linux-x64-gnu.node",
   "files": [
-    "delta-js.linux-x64-gnu.node"
+    "deltalake.linux-x64-gnu.node"
   ],
   "license": "MIT",
   "engines": {

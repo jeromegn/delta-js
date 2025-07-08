@@ -1,15 +1,15 @@
 {
-  "name": "deltalake-darwin-arm64",
+  "name": "deltalake-linux-arm64-gnu",
   "version": "0.0.0",
   "os": [
-    "darwin"
+    "linux"
   ],
   "cpu": [
     "arm64"
   ],
-  "main": "deltalake.darwin-arm64.node",
+  "main": "deltalake.linux-arm64-gnu.node",
   "files": [
-    "deltalake.darwin-arm64.node"
+    "deltalake.linux-arm64-gnu.node"
   ],
   "license": "MIT",
   "engines": {
