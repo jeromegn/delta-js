@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { mkdtemp, readdir, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
-import { DeltaTable, WriteMode } from "../delta";
+import { DeltaTable, WriteMode } from "../delta/index.js";
 
 let tmpDir: string;
 
@@ -120,14 +120,6 @@ test("it only keep last version when retentionHours is set to 0 and dryRun is fa
   const tableFiles = (await readdir(tmpDir)).filter((path) =>
     path.endsWith(".parquet"),
   );
-
-  // const intersection = [];
-
-  // for (const f of originalFiles) {
-  //   if (newFiles.has(f)) {
-  //     intersection.push(f);
-  //   }
-  // }
 
   expect(originalFiles.intersection(newFiles).size).toEqual(0);
   expect(new Set(tombstones).symmetricDifference(originalFiles).size).toEqual(

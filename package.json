@@ -10,6 +10,7 @@
     "rust"
   ],
   "main": "build/index.js",
+  "type": "module",
   "types": "./build/index.d.ts",
   "files": [
     "build"
@@ -25,7 +26,8 @@
     "artifacts": "napi artifacts",
     "build": "napi build --platform --release --dts native.d.ts --js native.js -o delta --esm",
     "build:debug": "napi build --platform --dts native.d.ts --js native.js && npm run build:ts",
-    "build:ts": " rm -rf build/; tsc -p tsconfig.build.json",
+    "build:ts": "rm -rf build/; tsc -p tsconfig.build.json",
+    "build:dev": "npm run build && npm run build:ts && cp delta/*.node build/",
     "build:doc": "typedoc --excludeInternal delta/index.ts",
     "prepublishOnly": "napi prepublish -t npm",
     "universal": "napi universal",

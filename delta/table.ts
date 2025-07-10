@@ -8,12 +8,24 @@ import {
   tableFromJSON,
   Vector,
   tableFromArrays,
+  RecordBatchStreamWriter,
+  RecordBatchWriter,
 } from "apache-arrow";
 
-import { RawDeltaTable } from "./native";
-import { CommitProperties, PostCommitHookProperties } from "./transaction";
-import { Optional } from "./types";
-import { WriterProperties } from "./writer/properties";
+import {
+  CdfTableProvider,
+  CommitInfo,
+  DeltaTableCreateBuilder,
+  DeltaTableOptimizeMetrics,
+  DeltaTableOptimizeOptions,
+  DeltaTableOptimizeType,
+  RawDeltaTable,
+} from "./native.js";
+import { CommitProperties, PostCommitHookProperties } from "./transaction.js";
+import { Optional } from "./types.js";
+import { WriterProperties } from "./writer/properties.js";
+import { schemaFromJSON } from "apache-arrow/ipc/metadata/json";
+import { Cursor, CursorImpl } from "./reader/query.js";
 
 export interface AWSConfigKeyCredentials {
   awsRegion: string;
@@ -182,6 +194,12 @@ export class DeltaTable {
     this._table = new RawDeltaTable(tableUri, innerOptions);
   }
 
+  static fromRaw(raw: RawDeltaTable): DeltaTable {
+    const instance = Object.create(DeltaTable.prototype);
+    instance._table = raw;
+    return instance;
+  }
+
   /**
    * Returns true if a Delta Table exists at specified path.
    * Returns false otherwise.
@@ -194,6 +212,13 @@ export class DeltaTable {
     storageOptions?: StorageBackendOptions,
   ): Promise<boolean> {
     return RawDeltaTable.isDeltaTable(tableUri, storageOptions);
+  }
+
+  async cdf(
+    startVersion: number,
+    endVersion: number,
+  ): Promise<CdfTableProvider> {
+    return await this._table.cdf(startVersion, endVersion);
   }
 
   /** Build the DeltaTable and load its state. */
@@ -243,7 +268,7 @@ export class DeltaTable {
    * @param limit the maximum number of commits to return
    * @returns array of commit infos registered in the transaction log
    */
-  async history(limit?: number): Promise<string[]> {
+  async history(limit?: number): Promise<CommitInfo[]> {
     return this._table.history(limit);
   }
 
@@ -256,6 +281,28 @@ export class DeltaTable {
   }
 
   /**
+   * Run the Optimize command on the Delta Table
+   */
+  optimize(
+    type: OptimizeType,
+    options?: DeltaTableOptimizeOptions,
+  ): Promise<DeltaTableOptimizeMetrics> {
+    return this._table.optimize(
+      type as unknown as DeltaTableOptimizeType,
+      options,
+    );
+  }
+
+  public static async create(
+    tableUri: string,
+    storageOptions?: StorageBackendOptions,
+  ): Promise<CreateBuilder> {
+    return CreateBuilder._make(
+      await RawDeltaTable.create(tableUri, storageOptions),
+    );
+  }
+
+  /**
    * Write data to Delta Table. Table will be created if it does not exists.
    *
    * @param data Array of rows - will be converted to Arrow IPC buffer
@@ -264,25 +311,30 @@ export class DeltaTable {
    * @param options
    */
   async write(
-    data: Record<string, unknown>[],
+    data: Record<string, unknown>[] | CursorImpl,
     mode: WriteMode,
     schema?: ArrowSchema,
     options?: WriteOptions,
   ): Promise<void> {
-    let table: ArrowTable;
-    if (!schema) {
-      table = tableFromJSON(data);
+    if (data instanceof CursorImpl) {
+      this._table.write(data.rawCursor, mode, options);
+      return;
     } else {
-      const vectors: Record<string, Vector<any>> = {};
-      schema.fields.forEach((field) => {
-        const fieldData = data.map((d) => d[field.name]);
-        vectors[field.name] = vectorFromArray(fieldData, field.type);
-      });
+      let table: ArrowTable;
+      if (!schema) {
+        table = tableFromJSON(data);
+      } else {
+        const vectors: Record<string, Vector<any>> = {};
+        schema.fields.forEach((field) => {
+          const fieldData = data.map((d) => d[field.name]);
+          vectors[field.name] = vectorFromArray(fieldData, field.type);
+        });
 
-      table = tableFromArrays(vectors as any);
+        table = tableFromArrays(vectors as any);
+      }
+
+      return this._table.write(tableToIPC(table), mode, options);
     }
-
-    return this._table.write(tableToIPC(table), mode, options);
   }
 
   /**
@@ -299,4 +351,70 @@ export class DeltaTable {
   ): Promise<void> {
     return this._table.write(data, mode, options);
   }
+}
+
+export class CreateBuilder {
+  private _builder: DeltaTableCreateBuilder;
+
+  private constructor(builder: DeltaTableCreateBuilder) {
+    this._builder = builder;
+  }
+
+  static _make(builder: DeltaTableCreateBuilder): CreateBuilder {
+    return new CreateBuilder(builder);
+  }
+
+  withColumns(columns: StructField[]) {
+    this._builder = this._builder.withColumns(JSON.stringify(columns));
+
+    // const table = tableFromArrays(vectors as any);
+    // this._builder = this._builder.withColumns(tableToIPC(table));
+    return this;
+  }
+  withConfigurationProperty(prop: string, value?: string) {
+    this._builder = this._builder.withConfigurationProperty(prop, value);
+    return this;
+  }
+  withTableName(name: string) {
+    this._builder = this._builder.withTableName(name);
+    return this;
+  }
+  withPartitionColumns(columns: string[]) {
+    this._builder = this._builder.withPartitionColumns(columns);
+    return this;
+  }
+  withSaveMode(mode: string) {
+    this._builder = this._builder.withSaveMode(mode);
+    return this;
+  }
+  async build(): Promise<DeltaTable> {
+    return DeltaTable.fromRaw(await this._builder.build());
+  }
+}
+
+export type StructField = {
+  name: string;
+  type: DataType;
+  nullable: boolean;
+  metadata: Record<string, any>;
+};
+
+export enum DataType {
+  String = "string",
+  Long = "long",
+  Integer = "integer",
+  Short = "short",
+  Byte = "byte",
+  Float = "float",
+  Double = "double",
+  Boolean = "boolean",
+  Binary = "binary",
+  Date = "date",
+  Timestamp = "timestamp",
+  TimestampNtz = "timestamp_ntz",
+}
+
+export enum OptimizeType {
+  Compact = "compact",
+  ZOrder = "z_order",
 }

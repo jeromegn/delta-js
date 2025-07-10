@@ -1,6 +1,5 @@
-use arrow_schema::ArrowError;
+use deltalake::arrow::error::ArrowError;
 use deltalake::datafusion::error::DataFusionError;
-use deltalake::protocol::ProtocolError;
 use deltalake::{errors::DeltaTableError, ObjectStoreError};
 use napi::{Error, Status};
 
@@ -12,8 +11,8 @@ pub enum JsError {
   ObjectStore(#[from] ObjectStoreError),
   #[error("Arrow error: {0}")]
   Arrow(#[from] ArrowError),
-  #[error("Protocol error: {0}")]
-  Protocol(#[from] ProtocolError),
+  // #[error("Protocol error: {0}")]
+  // Protocol(#[from] ProtocolError),
   #[error("DataFusion error: {0}")]
   DataFusion(#[from] DataFusionError),
   #[error("Threading error: {0}")]
@@ -36,7 +35,7 @@ impl From<JsError> for Error {
       JsError::DeltaTable(e) => inner_to_napi_err(e),
       JsError::ObjectStore(e) => object_store_to_napi(e),
       JsError::Arrow(e) => arrow_to_napi(e),
-      JsError::Protocol(e) => protocol_to_napi(e),
+      // JsError::Protocol(e) => protocol_to_napi(e),
       JsError::DataFusion(e) => Error::new(Status::GenericFailure, e.to_string()),
       JsError::ThreadingError(e) => Error::new(Status::GenericFailure, e),
       _ => Error::new(Status::GenericFailure, err.to_string()),
@@ -99,26 +98,26 @@ fn arrow_to_napi(err: ArrowError) -> Error {
   }
 }
 
-fn protocol_to_napi(err: ProtocolError) -> Error {
-  match err {
-    ProtocolError::Arrow { source } => arrow_to_napi(source),
-    ProtocolError::ObjectStore { source } => object_store_to_napi(source),
-    ProtocolError::EndOfLog => Error::new(Status::GenericFailure, "End of log".to_string()),
-    ProtocolError::NoMetaData => {
-      Error::new(Status::GenericFailure, "Table metadata missing".to_string())
-    }
-    ProtocolError::CheckpointNotFound => Error::new(Status::GenericFailure, err.to_string()),
-    ProtocolError::InvalidField(e)
-    | ProtocolError::InvalidRow(e)
-    | ProtocolError::InvalidDeletionVectorStorageType(e) => Error::new(Status::InvalidArg, e),
-    ProtocolError::SerializeOperation { source } => {
-      Error::new(Status::GenericFailure, source.to_string())
-    }
-    ProtocolError::ParquetParseError { source } => {
-      Error::new(Status::GenericFailure, source.to_string())
-    }
-    ProtocolError::IO { source } => Error::new(Status::GenericFailure, source.to_string()),
-    ProtocolError::Generic(msg) => Error::new(Status::GenericFailure, msg),
-    ProtocolError::Kernel { source } => Error::new(Status::GenericFailure, source.to_string()),
-  }
-}
+// fn protocol_to_napi(err: ProtocolError) -> Error {
+//   match err {
+//     ProtocolError::Arrow { source } => arrow_to_napi(source),
+//     ProtocolError::ObjectStore { source } => object_store_to_napi(source),
+//     ProtocolError::EndOfLog => Error::new(Status::GenericFailure, "End of log".to_string()),
+//     ProtocolError::NoMetaData => {
+//       Error::new(Status::GenericFailure, "Table metadata missing".to_string())
+//     }
+//     ProtocolError::CheckpointNotFound => Error::new(Status::GenericFailure, err.to_string()),
+//     ProtocolError::InvalidField(e)
+//     | ProtocolError::InvalidRow(e)
+//     | ProtocolError::InvalidDeletionVectorStorageType(e) => Error::new(Status::InvalidArg, e),
+//     ProtocolError::SerializeOperation { source } => {
+//       Error::new(Status::GenericFailure, source.to_string())
+//     }
+//     ProtocolError::ParquetParseError { source } => {
+//       Error::new(Status::GenericFailure, source.to_string())
+//     }
+//     ProtocolError::IO { source } => Error::new(Status::GenericFailure, source.to_string()),
+//     ProtocolError::Generic(msg) => Error::new(Status::GenericFailure, msg),
+//     ProtocolError::Kernel { source } => Error::new(Status::GenericFailure, source.to_string()),
+//   }
+// }

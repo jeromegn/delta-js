@@ -21,6 +21,7 @@ mod writer;
 #[rustfmt::skip]
 mod table;
 
+mod datafusion;
 
 /// This function is executed when importing the module in JS
 /// and registers the [ObjectStoreFactory] needed to handle common cloud providers URL schemes.

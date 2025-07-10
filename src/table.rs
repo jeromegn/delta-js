@@ -3,23 +3,33 @@ use std::future::IntoFuture;
 use std::io::Cursor;
 use std::sync::Arc;
 
+use arrow_schema::ArrowError;
 use chrono::Duration;
+use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use deltalake::arrow::ipc::reader::StreamReader;
 use deltalake::datafusion::datasource::provider_as_source;
 use deltalake::datafusion::logical_expr::LogicalPlanBuilder;
+use deltalake::delta_datafusion::DeltaCdfTableProvider;
+use deltalake::kernel::StructField;
+use deltalake::operations::create::CreateBuilder;
+use deltalake::operations::optimize::{OptimizeBuilder, OptimizeType};
 use deltalake::operations::vacuum::VacuumBuilder;
 use deltalake::operations::write::WriteBuilder;
 use deltalake::parquet::basic::Compression;
 use deltalake::parquet::errors::ParquetError;
 use deltalake::parquet::file::properties::{EnabledStatistics, WriterProperties};
 use deltalake::{logstore::LogStoreRef, table::state::DeltaTableState};
-use deltalake::{DeltaResult, DeltaTable, DeltaTableBuilder, DeltaTableError};
+use deltalake::{
+  DeltaOps, DeltaResult, DeltaTable, DeltaTableBuilder, DeltaTableError, PartitionFilter,
+  TableProperty,
+};
 use napi::bindgen_prelude::Uint8Array;
 use napi::{Either, Result};
 use tokio::sync::Mutex;
 
 use crate::error::JsError;
 use crate::get_runtime;
+use crate::query::{RawCursor, RawQueryBuilder};
 use crate::transaction::{
   maybe_create_commit_properties, JsCommitProperties, JsPostCommitHookProperties,
 };
@@ -78,6 +88,16 @@ pub struct JsDeltaTableProtocolVersions {
   pub writer_features: Option<Vec<String>>,
 }
 
+#[napi(object, js_name = "CommitInfo")]
+pub struct JsCommitInfo {
+  pub timestamp: Option<i64>,
+  pub read_version: Option<i64>,
+  pub is_blind_append: Option<bool>,
+  pub engine_info: Option<String>,
+  pub info: HashMap<String, serde_json::Value>,
+  pub user_metadata: Option<String>,
+}
+
 #[napi(object)]
 pub struct DeltaTableVacuumOptions {
   /// When true, list only the files, delete otherwise.
@@ -98,6 +118,23 @@ pub struct DeltaTableVacuumOptions {
 
   /// Properties for the post commit hook. If null, default values are used.
   pub post_commithook_properties: Option<JsPostCommitHookProperties>,
+}
+
+#[napi(string_enum = "snake_case")]
+pub enum DeltaTableOptimizeType {
+  Compact,
+  ZOrder,
+}
+
+#[napi(object)]
+pub struct DeltaTableOptimizeOptions {
+  pub z_order_fields: Option<Vec<String>>,
+
+  /// Properties of the transaction commit. If null, default values are used.
+  pub commit_properties: Option<JsCommitProperties>,
+
+  /// filters for the optimize operation
+  pub filters: Option<Vec<Either<(String, String, String), (String, String, Vec<String>)>>>,
 }
 
 #[napi(object)]
@@ -172,11 +209,6 @@ impl RawDeltaTable {
     Ok(table.get_latest_version().await.map_err(JsError::from)?)
   }
 
-  pub async fn get_earliest_version(&self) -> Result<i64> {
-    let table = self.table.lock().await;
-    Ok(table.get_earliest_version().await.map_err(JsError::from)?)
-  }
-
   pub fn get_stats_columns(&self) -> Result<Option<Vec<String>>> {
     self.with_table(|t| {
       Ok(
@@ -198,6 +230,94 @@ impl RawDeltaTable {
           .num_indexed_cols(),
       )
     })
+  }
+}
+
+#[napi]
+pub struct CdfTableProvider {
+  pub(crate) provider: Arc<DeltaCdfTableProvider>,
+}
+
+#[napi]
+pub struct DeltaTableCreateBuilder {
+  builder: Option<CreateBuilder>,
+}
+
+#[napi]
+impl DeltaTableCreateBuilder {
+  #[napi]
+  pub fn with_columns(&mut self, json_columns: String) -> Result<Self> {
+    let builder = self.take_builder()?;
+
+    let columns: Vec<StructField> = serde_json::from_str(&json_columns).map_err(JsError::from)?;
+
+    Ok(Self {
+      builder: Some(builder.with_columns(columns)),
+    })
+  }
+
+  #[napi]
+  pub fn with_configuration_property(
+    &mut self,
+    prop: String,
+    value: Option<String>,
+  ) -> Result<Self> {
+    let builder = self.take_builder()?;
+
+    let prop: TableProperty = if prop.starts_with("delta.") {
+      prop.parse()
+    } else {
+      format!("delta.{prop}").parse()
+    }
+    .map_err(JsError::DeltaTable)?;
+
+    Ok(Self {
+      builder: Some(builder.with_configuration_property(prop, value)),
+    })
+  }
+
+  #[napi]
+  pub fn with_table_name(&mut self, name: String) -> Result<Self> {
+    let builder = self.take_builder()?;
+
+    Ok(Self {
+      builder: Some(builder.with_table_name(name)),
+    })
+  }
+
+  #[napi]
+  pub fn with_partition_columns(&mut self, columns: Vec<String>) -> Result<Self> {
+    let builder = self.take_builder()?;
+
+    Ok(Self {
+      builder: Some(builder.with_partition_columns(columns)),
+    })
+  }
+  #[napi]
+  pub fn with_save_mode(&mut self, mode: String) -> Result<Self> {
+    let builder = self.take_builder()?;
+
+    Ok(Self {
+      builder: Some(builder.with_save_mode(mode.parse().map_err(JsError::DeltaTable)?)),
+    })
+  }
+
+  #[napi]
+  pub async unsafe fn build(&mut self) -> Result<RawDeltaTable> {
+    let builder = self.take_builder()?;
+
+    Ok(RawDeltaTable {
+      table: Arc::new(Mutex::new(builder.await.map_err(JsError::DeltaTable)?)),
+    })
+  }
+
+  fn take_builder(&mut self) -> Result<CreateBuilder> {
+    Ok(
+      self
+        .builder
+        .take()
+        .ok_or_else(|| JsError::Other("delta table creator has been used".into()))?,
+    )
   }
 }
 
@@ -247,6 +367,39 @@ impl RawDeltaTable {
     Ok(RawDeltaTable { table })
   }
 
+  #[napi]
+  pub async fn create(
+    table_uri: String,
+    storage_options: Option<Either<AWSConfigKeyCredentials, AWSConfigKeyProfile>>,
+  ) -> Result<DeltaTableCreateBuilder> {
+    let ops = if let Some(storage_options) = storage_options {
+      let options = get_storage_options(storage_options);
+      DeltaOps::try_from_uri_with_storage_options(table_uri, options).await
+    } else {
+      DeltaOps::try_from_uri(table_uri).await
+    }
+    .map_err(JsError::from)?;
+
+    Ok(DeltaTableCreateBuilder {
+      builder: Some(ops.create()),
+    })
+  }
+
+  #[napi]
+  pub async fn cdf(&self, start_version: i64, end_version: i64) -> Result<CdfTableProvider> {
+    let provider = Arc::new(
+      DeltaCdfTableProvider::try_new(
+        DeltaOps(self.table.lock().await.clone())
+          .load_cdf()
+          .with_starting_version(start_version)
+          .with_ending_version(end_version),
+      )
+      .map_err(JsError::from)?,
+    );
+
+    Ok(CdfTableProvider { provider })
+  }
+
   #[napi(catch_unwind)]
   pub async fn is_delta_table(
     table_uri: String,
@@ -284,7 +437,7 @@ impl RawDeltaTable {
 
   #[napi(catch_unwind)]
   pub fn version(&self) -> Result<i64> {
-    self.with_table(|t| Ok(t.version()))
+    self.with_table(|t| Ok(t.version().unwrap_or(-1)))
   }
 
   #[napi(catch_unwind)]
@@ -383,7 +536,7 @@ impl RawDeltaTable {
   }
 
   #[napi(catch_unwind)]
-  pub async fn history(&self, limit: Option<u8>) -> Result<Vec<String>> {
+  pub async fn history(&self, limit: Option<u8>) -> Result<Vec<JsCommitInfo>> {
     let table = self.table.lock().await;
     let history = table
       .history(limit.map(|l| l as usize))
@@ -393,8 +546,15 @@ impl RawDeltaTable {
 
     Ok(
       history
-        .iter()
-        .map(|c| serde_json::to_string(c).map_err(JsError::from).unwrap())
+        .into_iter()
+        .map(|c| JsCommitInfo {
+          timestamp: c.timestamp,
+          read_version: c.read_version,
+          is_blind_append: c.is_blind_append,
+          engine_info: c.engine_info,
+          info: c.info,
+          user_metadata: c.user_metadata,
+        })
         .collect(),
     )
   }
@@ -438,10 +598,105 @@ impl RawDeltaTable {
     Ok(metrics.files_deleted)
   }
 
+  /// Run the Optimize command on the Delta Table
+  #[napi(catch_unwind)]
+  pub async fn optimize(
+    &self,
+    kind: DeltaTableOptimizeType,
+    mut options: Option<DeltaTableOptimizeOptions>,
+  ) -> Result<DeltaTableOptimizeMetrics> {
+    let mut table = self.table.lock().await;
+    let log_store = table.log_store();
+    let snapshot = table.snapshot().cloned().map_err(JsError::from)?;
+
+    let mut cmd = OptimizeBuilder::new(log_store.clone(), snapshot);
+    cmd = cmd.with_type(
+      match (
+        kind,
+        options.as_mut().and_then(|opts| opts.z_order_fields.take()),
+      ) {
+        (DeltaTableOptimizeType::Compact, _) => OptimizeType::Compact,
+        (DeltaTableOptimizeType::ZOrder, Some(fields)) => OptimizeType::ZOrder(fields),
+        (DeltaTableOptimizeType::ZOrder, None) => {
+          return Err(
+            JsError::Other("z_order_fields is required when using ZOrder optimization type".into())
+              .into(),
+          );
+        }
+      },
+    );
+
+    if let Some(commit_properties) = maybe_create_commit_properties(
+      options
+        .as_mut()
+        .and_then(|opts| opts.commit_properties.take()),
+      None,
+    ) {
+      cmd = cmd.with_commit_properties(commit_properties);
+    }
+
+    let filters = if let Some(filters) = options.and_then(|opts| opts.filters) {
+      Some(
+        filters
+          .into_iter()
+          .map(|filter| match filter {
+            Either::A((s1, s2, s3)) => (s1.as_str(), s2.as_str(), s3.as_str()).try_into(),
+            Either::B((s1, s2, many)) => (
+              s1.as_str(),
+              s2.as_str(),
+              many
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<&str>>()
+                .as_slice(),
+            )
+              .try_into(),
+          })
+          .collect::<std::result::Result<Vec<PartitionFilter>, DeltaTableError>>()
+          .map_err(|e| JsError::DeltaTable(e))?,
+      )
+    } else {
+      None
+    };
+
+    if let Some(filters) = filters.as_ref() {
+      cmd = cmd.with_filters(filters);
+    }
+
+    // GenericError { source: InvalidVacuumRetentionPeriod { provided: 167, min: 168 } }
+    let (updated_table, metrics) = cmd.into_future().await.map_err(JsError::from)?;
+
+    table.state = updated_table.state;
+
+    Ok(DeltaTableOptimizeMetrics {
+      num_files_added: metrics.num_files_added as u32,
+      num_files_removed: metrics.num_files_removed as u32,
+      files_added: DeltaTableOptimizeMetricDetails {
+        avg: metrics.files_added.avg,
+        max: metrics.files_added.max,
+        min: metrics.files_added.min,
+        total_files: metrics.files_added.total_files as u32,
+        total_size: metrics.files_added.total_size,
+      },
+      files_removed: DeltaTableOptimizeMetricDetails {
+        avg: metrics.files_removed.avg,
+        max: metrics.files_removed.max,
+        min: metrics.files_removed.min,
+        total_files: metrics.files_removed.total_files as u32,
+        total_size: metrics.files_removed.total_size,
+      },
+      partitions_optimized: metrics.partitions_optimized as u32,
+      num_batches: metrics.num_batches as u32,
+      total_considered_files: metrics.total_considered_files as u32,
+      total_files_skipped: metrics.total_files_skipped as u32,
+      preserve_insertion_order: metrics.preserve_insertion_order,
+    })
+  }
+
   #[napi]
   pub async fn write(
     &self,
-    data: Uint8Array,
+    data: Either<Uint8Array, &RawCursor>,
     mode: String,
     options: Option<DeltaTableWriteOptions>,
   ) -> Result<()> {
@@ -450,7 +705,7 @@ impl RawDeltaTable {
 
     // FIXME: Doesn't this kinda defeat the purpose of the without_files flag?
     // When table isn't already loaded and exists, we need to load it first
-    if table.version() == -1 {
+    if table.version().is_some() {
       let is_delta_table = table
         .verify_deltatable_existence()
         .await
@@ -469,15 +724,23 @@ impl RawDeltaTable {
     )
     .with_save_mode(mode.parse().map_err(JsError::from)?);
 
-    let cursor = Cursor::new(data.to_vec());
-    let reader = StreamReader::try_new(cursor, None).map_err(JsError::from)?;
+    let plan = match data {
+      Either::A(data) => {
+        let cursor = Cursor::new(data.to_vec());
+        let reader = StreamReader::try_new(cursor, None).map_err(JsError::from)?;
 
-    let table_provider = to_lazy_table(reader).map_err(JsError::from)?;
+        let table_provider = to_lazy_table(reader).map_err(JsError::from)?;
 
-    let plan = LogicalPlanBuilder::scan("source", provider_as_source(table_provider), None)
-      .map_err(JsError::from)?
-      .build()
-      .map_err(JsError::from)?;
+        LogicalPlanBuilder::scan("source", provider_as_source(table_provider), None)
+          .map_err(JsError::from)?
+          .build()
+          .map_err(JsError::from)?
+      }
+      Either::B(cursor) => {
+        let df = cursor.dataframe().await?;
+        df.logical_plan().clone()
+      }
+    };
 
     builder = builder.with_input_execution_plan(Arc::new(plan));
 
@@ -529,6 +792,42 @@ impl RawDeltaTable {
 
     Ok(())
   }
+}
+
+#[napi(object)]
+pub struct DeltaTableOptimizeMetrics {
+  /// Number of optimized files added
+  pub num_files_added: u32,
+  /// Number of unoptimized files removed
+  pub num_files_removed: u32,
+  /// Detailed metrics for the add operation
+  pub files_added: DeltaTableOptimizeMetricDetails,
+  /// Detailed metrics for the remove operation
+  pub files_removed: DeltaTableOptimizeMetricDetails,
+  /// Number of partitions that had at least one file optimized
+  pub partitions_optimized: u32,
+  /// The number of batches written
+  pub num_batches: u32,
+  /// How many files were considered during optimization. Not every file considered is optimized
+  pub total_considered_files: u32,
+  /// How many files were considered for optimization but were skipped
+  pub total_files_skipped: u32,
+  /// The order of records from source files is preserved
+  pub preserve_insertion_order: bool,
+}
+
+#[napi(object)]
+pub struct DeltaTableOptimizeMetricDetails {
+  /// Average file size of a operation
+  pub avg: f64,
+  /// Maximum file size of a operation
+  pub max: i64,
+  /// Minimum file size of a operation
+  pub min: i64,
+  /// Number of files encountered during operation
+  pub total_files: u32,
+  /// Sum of file sizes of a operation
+  pub total_size: i64,
 }
 
 fn get_storage_options(

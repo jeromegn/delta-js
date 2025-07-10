@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "commonjs",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "outDir": "./build",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -11,7 +12,9 @@
     "allowJs": true,
     "resolveJsonModule": true,
     "noImplicitAny": false,
-    "baseUrl": "./delta"
+    "baseUrl": "./delta",
+    "lib": ["esnext"],
+    "types": ["vitest/globals"]
   },
   "exclude": [
     "./target/*",

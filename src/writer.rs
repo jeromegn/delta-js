@@ -6,11 +6,12 @@ use std::{
 };
 
 use deltalake::datafusion::catalog::TableProvider;
-use deltalake::delta_datafusion::LazyTableProvider;
 use deltalake::DeltaResult;
 use deltalake::{
   arrow::ipc::reader::StreamReader, datafusion::physical_plan::memory::LazyBatchGenerator,
 };
+
+use crate::datafusion::lazy_table_provider::LazyTableProvider;
 
 pub fn to_lazy_table(source: StreamReader<Cursor<Vec<u8>>>) -> DeltaResult<Arc<dyn TableProvider>> {
   let schema = source.schema();
