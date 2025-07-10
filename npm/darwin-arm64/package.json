@@ -1,18 +1,23 @@
 {
-  "name": "@delta-js/delta-js-darwin-arm64",
-  "version": "0.0.0",
+  "name": "deltalake-darwin-arm64",
+  "version": "0.0.1-2",
   "os": [
     "darwin"
   ],
   "cpu": [
     "arm64"
   ],
-  "main": "delta-js.darwin-arm64.node",
+  "main": "deltalake.darwin-arm64.node",
   "files": [
-    "delta-js.darwin-arm64.node"
+    "deltalake.darwin-arm64.node"
   ],
   "license": "MIT",
   "engines": {
     "node": ">= 10"
-  }
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": "https://github.com/jeromegn/delta-js.git"
 }

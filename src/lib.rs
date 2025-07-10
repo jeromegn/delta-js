@@ -2,7 +2,7 @@
 extern crate napi_derive;
 
 use deltalake::init_client_version;
-use napi::*;
+use napi::{bindgen_prelude::*, JsObject};
 use std::sync::Once;
 use tokio::runtime::Runtime;
 
@@ -21,12 +21,14 @@ mod writer;
 #[rustfmt::skip]
 mod table;
 
-#[module_exports]
+mod datafusion;
+
 /// This function is executed when importing the module in JS
 /// and registers the [ObjectStoreFactory] needed to handle common cloud providers URL schemes.
 /// Only AWS is supported so far as I don't have access to other cloud providers for testing.
 /// https://github.com/delta-io/delta-rs/blob/0b90a11383dce614be369032062e3e8e78cf95d9/python/src/lib.rs#L2197
-fn init(_: JsObject) -> Result<()> {
+#[module_init]
+fn init() {
   deltalake::aws::register_handlers(None);
   // deltalake::azure::register_handlers(None);
   // deltalake::gcp::register_handlers(None);
@@ -35,7 +37,7 @@ fn init(_: JsObject) -> Result<()> {
 
   init_client_version(format!("js-{}", env!("CARGO_PKG_VERSION")).as_str());
 
-  Ok(())
+  // Ok(())
 }
 
 static INIT: Once = Once::new();

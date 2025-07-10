@@ -1,23 +1,20 @@
 {
-  "name": "deltalake-linux-x64-gnu",
+  "name": "deltalake-linux-arm64-gnu",
   "version": "0.0.1-2",
   "os": [
     "linux"
   ],
   "cpu": [
-    "x64"
+    "arm64"
   ],
-  "main": "deltalake.linux-x64-gnu.node",
+  "main": "deltalake.linux-arm64-gnu.node",
   "files": [
-    "deltalake.linux-x64-gnu.node"
+    "deltalake.linux-arm64-gnu.node"
   ],
   "license": "MIT",
   "engines": {
     "node": ">= 10"
   },
-  "libc": [
-    "glibc"
-  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"

@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { mkdtemp, readdir, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
-import { DeltaTable, WriteMode } from "../delta";
+import { DeltaTable, WriteMode } from "../delta/index.js";
 
 let tmpDir: string;
 

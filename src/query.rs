@@ -8,28 +8,34 @@ use deltalake::{
     },
     util::pretty::print_batches,
   },
-  datafusion::prelude::SessionContext,
+  datafusion::{
+    catalog::TableProvider,
+    prelude::{DataFrame, SessionContext},
+  },
   delta_datafusion::{DeltaScanConfigBuilder, DeltaSessionConfig, DeltaTableProvider},
 };
 use futures::TryStreamExt;
 use napi::{
   bindgen_prelude::{Buffer, BufferSlice, ReadableStream},
-  Env, Result,
+  Either, Env, Result,
 };
 use tokio::sync::mpsc::error::SendError;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::{error::JsError, get_runtime, table::RawDeltaTable};
+use crate::{
+  error::JsError,
+  get_runtime,
+  table::{CdfTableProvider, RawDeltaTable},
+};
 
 #[napi]
-#[derive(Clone)]
 pub struct RawQueryBuilder {
   ctx: SessionContext,
 }
 
 #[napi]
 pub struct RawCursor {
-  query_builder: RawQueryBuilder,
+  ctx: SessionContext,
   sql_query: String,
 }
 
@@ -51,32 +57,37 @@ impl RawQueryBuilder {
   pub fn register(
     &self,
     table_name: String,
-    delta_table: &RawDeltaTable,
-  ) -> Result<RawQueryBuilder> {
-    let snapshot = delta_table.clone_state()?;
-    let log_store = delta_table.log_store()?;
+    delta_table: Either<&RawDeltaTable, &CdfTableProvider>,
+  ) -> Result<()> {
+    let provider: Arc<dyn TableProvider> = match delta_table {
+      Either::A(delta_table) => {
+        let snapshot = delta_table.clone_state()?;
+        let log_store = delta_table.log_store()?;
 
-    let scan_config = DeltaScanConfigBuilder::default()
-      .build(&snapshot)
-      .map_err(JsError::from)?;
+        let scan_config = DeltaScanConfigBuilder::default()
+          .build(&snapshot)
+          .map_err(JsError::from)?;
 
-    let provider = Arc::new(
-      DeltaTableProvider::try_new(snapshot, log_store, scan_config).map_err(JsError::from)?,
-    );
+        Arc::new(
+          DeltaTableProvider::try_new(snapshot, log_store, scan_config).map_err(JsError::from)?,
+        )
+      }
+      Either::B(cdf) => cdf.provider.clone(),
+    };
 
     self
       .ctx
       .register_table(table_name, provider)
       .map_err(JsError::from)?;
 
-    Ok(self.clone())
+    Ok(())
   }
 
   #[napi(catch_unwind)]
   /// Prepares the sql query to be executed.
   pub fn sql(&self, sql_query: String) -> RawCursor {
     RawCursor {
-      query_builder: self.clone(),
+      ctx: self.ctx.clone(),
       sql_query,
     }
   }
@@ -84,19 +95,10 @@ impl RawQueryBuilder {
 
 #[napi]
 impl RawCursor {
-  #[napi(constructor)]
-  pub fn new(query_builder: &RawQueryBuilder, sql_query: String) -> Self {
-    RawCursor {
-      query_builder: query_builder.clone(),
-      sql_query,
-    }
-  }
-
   #[napi(catch_unwind)]
   /// Print the first 25 rows returned by the SQL query
   pub async fn show(&self) -> Result<()> {
     let df = self
-      .query_builder
       .ctx
       .sql(self.sql_query.as_str())
       .await
@@ -111,6 +113,16 @@ impl RawCursor {
     Ok(())
   }
 
+  pub(crate) async fn dataframe(&self) -> Result<DataFrame> {
+    Ok(
+      self
+        .ctx
+        .sql(self.sql_query.as_str())
+        .await
+        .map_err(JsError::from)?,
+    )
+  }
+
   #[napi(catch_unwind)]
   /// Execute the given SQL command within the [SessionContext] of this instance
   ///
@@ -119,7 +131,7 @@ impl RawCursor {
   pub fn stream(&self, env: Env) -> Result<ReadableStream<BufferSlice>> {
     let stream = get_runtime()
       .block_on(async {
-        let df = self.query_builder.ctx.sql(self.sql_query.as_str()).await?;
+        let df = self.ctx.sql(self.sql_query.as_str()).await?;
         df.execute_stream().await
       })
       .map_err(JsError::from)?;
@@ -192,7 +204,6 @@ impl RawCursor {
   /// sets.
   pub async fn fetch_all(&self) -> Result<Buffer> {
     let df = self
-      .query_builder
       .ctx
       .sql(self.sql_query.as_str())
       .await
