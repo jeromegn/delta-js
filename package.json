@@ -1,7 +1,10 @@
 {
-  "name": "delta-js",
+  "name": "@guillotjulien/delta-js",
   "version": "0.0.0",
-  "repository": "https://github.com/guillotjulien/delta-js.git",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guillotjulien/delta-js.git"
+  },
   "license": "Apache-2.0",
   "keywords": [
     "delta",
@@ -16,7 +19,7 @@
     "node": ">= 18"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
+    "registry": "https://npm.pkg.github.com",
     "access": "public"
   },
   "scripts": {

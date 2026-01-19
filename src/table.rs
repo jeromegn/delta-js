@@ -26,6 +26,15 @@ use crate::transaction::{
 };
 use crate::writer::to_lazy_table;
 
+/// Storage options type that supports AWS and Azure configurations
+pub type StorageOptionsType = Either<
+  Either<AWSConfigKeyCredentials, AWSConfigKeyProfile>,
+  Either<
+    Either<AzureConfigKeyCredentials, AzureConfigKeySas>,
+    Either<AzureConfigKeyServicePrincipal, AzureConfigKeyAzureCli>,
+  >,
+>;
+
 #[napi(object)]
 #[derive(Clone)]
 pub struct DeltaTableOptions {
@@ -39,8 +48,8 @@ pub struct DeltaTableOptions {
   /// Hence, DeltaTable will be loaded with significant memory reduction.
   pub without_files: Option<bool>,
 
-  /// Set options used to initialize storage backend.
-  pub storage_options: Option<Either<AWSConfigKeyCredentials, AWSConfigKeyProfile>>,
+  /// Set options used to initialize storage backend (AWS S3 or Azure ADLS Gen2).
+  pub storage_options: Option<StorageOptionsType>,
 }
 
 #[napi(object, js_name = "AWSConfigKeyCredentials")]
@@ -57,6 +66,50 @@ pub struct AWSConfigKeyCredentials {
 pub struct AWSConfigKeyProfile {
   pub aws_region: String,
   pub aws_profile: String,
+}
+
+/// Azure storage options using storage account key authentication
+#[napi(object, js_name = "AzureConfigKeyCredentials")]
+#[derive(Clone)]
+pub struct AzureConfigKeyCredentials {
+  /// Azure storage account name
+  pub azure_storage_account_name: String,
+  /// Azure storage account key
+  pub azure_storage_account_key: String,
+}
+
+/// Azure storage options using SAS token authentication
+#[napi(object, js_name = "AzureConfigKeySas")]
+#[derive(Clone)]
+pub struct AzureConfigKeySas {
+  /// Azure storage account name
+  pub azure_storage_account_name: String,
+  /// Azure SAS token
+  pub azure_storage_sas_key: String,
+}
+
+/// Azure storage options using service principal (client secret) authentication
+#[napi(object, js_name = "AzureConfigKeyServicePrincipal")]
+#[derive(Clone)]
+pub struct AzureConfigKeyServicePrincipal {
+  /// Azure storage account name
+  pub azure_storage_account_name: String,
+  /// Azure client/application ID
+  pub azure_client_id: String,
+  /// Azure client secret
+  pub azure_client_secret: String,
+  /// Azure tenant/authority ID
+  pub azure_tenant_id: String,
+}
+
+/// Azure storage options using Azure CLI authentication
+#[napi(object, js_name = "AzureConfigKeyAzureCli")]
+#[derive(Clone)]
+pub struct AzureConfigKeyAzureCli {
+  /// Azure storage account name
+  pub azure_storage_account_name: String,
+  /// Use Azure CLI for authentication
+  pub azure_use_azure_cli: bool,
 }
 
 #[napi(object, js_name = "DeltaTableMetadata")]
@@ -204,8 +257,13 @@ impl RawDeltaTable {
 impl RawDeltaTable {
   #[napi(constructor)]
   /// Create the Delta table from a path with an optional version.
-  /// Multiple StorageBackends are currently supported: AWS S3 and local URI.
+  /// Multiple StorageBackends are currently supported: AWS S3, Azure ADLS Gen2, and local URI.
   /// Depending on the storage backend used, you could provide options values using the `options` parameter.
+  ///
+  /// Supported URI schemes:
+  /// - Local: file:// or relative/absolute paths
+  /// - AWS S3: s3://bucket/path or s3a://bucket/path
+  /// - Azure: abfs://container@account.dfs.core.windows.net/path, az://container/path, adl://container/path
   ///
   /// This will not load the log, i.e. the table is not initialized. To get an initialized
   /// table use the `load` function.
@@ -249,7 +307,7 @@ impl RawDeltaTable {
   #[napi(catch_unwind)]
   pub async fn is_delta_table(
     table_uri: String,
-    storage_options: Option<Either<AWSConfigKeyCredentials, AWSConfigKeyProfile>>,
+    storage_options: Option<StorageOptionsType>,
   ) -> Result<bool> {
     let mut builder = DeltaTableBuilder::from_uri(table_uri.clone());
     if let Some(storage_options) = storage_options {
@@ -535,31 +593,84 @@ impl RawDeltaTable {
   }
 }
 
-fn get_storage_options(
-  storage_options: Either<AWSConfigKeyCredentials, AWSConfigKeyProfile>,
-) -> HashMap<String, String> {
+fn get_storage_options(storage_options: StorageOptionsType) -> HashMap<String, String> {
   let mut options: HashMap<String, String> = HashMap::new();
 
   match storage_options {
-    Either::A(credentials_options) => {
-      options.insert("aws_region".to_string(), credentials_options.aws_region);
-      options.insert(
-        "aws_access_key_id".to_string(),
-        credentials_options.aws_access_key_id,
-      );
-      options.insert(
-        "aws_secret_access_key".to_string(),
-        credentials_options.aws_secret_access_key,
-      );
+    // AWS options
+    Either::A(aws_options) => match aws_options {
+      Either::A(credentials_options) => {
+        options.insert("aws_region".to_string(), credentials_options.aws_region);
+        options.insert(
+          "aws_access_key_id".to_string(),
+          credentials_options.aws_access_key_id,
+        );
+        options.insert(
+          "aws_secret_access_key".to_string(),
+          credentials_options.aws_secret_access_key,
+        );
 
-      if let Some(aws_session_token) = credentials_options.aws_session_token {
-        options.insert("aws_session_token".to_string(), aws_session_token);
+        if let Some(aws_session_token) = credentials_options.aws_session_token {
+          options.insert("aws_session_token".to_string(), aws_session_token);
+        }
       }
-    }
-    Either::B(profile_options) => {
-      options.insert("aws_region".to_string(), profile_options.aws_region);
-      options.insert("aws_profile".to_string(), profile_options.aws_profile);
-    }
+      Either::B(profile_options) => {
+        options.insert("aws_region".to_string(), profile_options.aws_region);
+        options.insert("aws_profile".to_string(), profile_options.aws_profile);
+      }
+    },
+    // Azure options
+    Either::B(azure_options) => match azure_options {
+      Either::A(azure_inner) => match azure_inner {
+        // Azure account key credentials
+        Either::A(credentials_options) => {
+          options.insert(
+            "azure_storage_account_name".to_string(),
+            credentials_options.azure_storage_account_name,
+          );
+          options.insert(
+            "azure_storage_account_key".to_string(),
+            credentials_options.azure_storage_account_key,
+          );
+        }
+        // Azure SAS token
+        Either::B(sas_options) => {
+          options.insert(
+            "azure_storage_account_name".to_string(),
+            sas_options.azure_storage_account_name,
+          );
+          options.insert(
+            "azure_storage_sas_key".to_string(),
+            sas_options.azure_storage_sas_key,
+          );
+        }
+      },
+      Either::B(azure_inner) => match azure_inner {
+        // Azure service principal
+        Either::A(sp_options) => {
+          options.insert(
+            "azure_storage_account_name".to_string(),
+            sp_options.azure_storage_account_name,
+          );
+          options.insert("azure_client_id".to_string(), sp_options.azure_client_id);
+          options.insert(
+            "azure_client_secret".to_string(),
+            sp_options.azure_client_secret,
+          );
+          options.insert("azure_tenant_id".to_string(), sp_options.azure_tenant_id);
+        }
+        // Azure CLI
+        Either::B(cli_options) => {
+          options.insert(
+            "azure_storage_account_name".to_string(),
+            cli_options.azure_storage_account_name,
+          );
+          if cli_options.azure_use_azure_cli {
+            options.insert("azure_use_azure_cli".to_string(), "true".to_string());
+          }
+        }
+      },
+    },
   }
 
   options

@@ -15,6 +15,7 @@ import { CommitProperties, PostCommitHookProperties } from "./transaction";
 import { Optional } from "./types";
 import { WriterProperties } from "./writer/properties";
 
+// AWS Storage Options
 export interface AWSConfigKeyCredentials {
   awsRegion: string;
   awsAccessKeyId: string;
@@ -27,9 +28,59 @@ export interface AWSConfigKeyProfile {
   awsProfile: string;
 }
 
+// Azure Storage Options
+export interface AzureConfigKeyCredentials {
+  /** Azure storage account name */
+  azureStorageAccountName: string;
+  /** Azure storage account key */
+  azureStorageAccountKey: string;
+}
+
+export interface AzureConfigKeySas {
+  /** Azure storage account name */
+  azureStorageAccountName: string;
+  /** Azure SAS token */
+  azureStorageSasKey: string;
+}
+
+export interface AzureConfigKeyServicePrincipal {
+  /** Azure storage account name */
+  azureStorageAccountName: string;
+  /** Azure client/application ID */
+  azureClientId: string;
+  /** Azure client secret */
+  azureClientSecret: string;
+  /** Azure tenant/authority ID */
+  azureTenantId: string;
+}
+
+export interface AzureConfigKeyAzureCli {
+  /** Azure storage account name */
+  azureStorageAccountName: string;
+  /** Use Azure CLI for authentication */
+  azureUseAzureCli: boolean;
+}
+
+/**
+ * Storage backend options for AWS S3 or Azure ADLS Gen2.
+ *
+ * For AWS S3:
+ * - Use `AWSConfigKeyCredentials` for access key authentication
+ * - Use `AWSConfigKeyProfile` for AWS profile-based authentication
+ *
+ * For Azure ADLS Gen2 (abfs://, az://, adl://):
+ * - Use `AzureConfigKeyCredentials` for storage account key authentication
+ * - Use `AzureConfigKeySas` for SAS token authentication
+ * - Use `AzureConfigKeyServicePrincipal` for service principal authentication
+ * - Use `AzureConfigKeyAzureCli` for Azure CLI authentication
+ */
 export type StorageBackendOptions =
   | AWSConfigKeyCredentials
-  | AWSConfigKeyProfile;
+  | AWSConfigKeyProfile
+  | AzureConfigKeyCredentials
+  | AzureConfigKeySas
+  | AzureConfigKeyServicePrincipal
+  | AzureConfigKeyAzureCli;
 
 export interface DeltaTableOptions {
   /** Specify the version to load either as an integer or a date. */
@@ -44,7 +95,15 @@ export interface DeltaTableOptions {
    */
   withoutFiles?: boolean;
 
-  /** Set options used to initialize storage backend. */
+  /**
+   * Set options used to initialize storage backend (AWS S3 or Azure ADLS Gen2).
+   *
+   * For Azure ADLS Gen2, supported URI schemes are:
+   * - `abfs://[container]@[account].dfs.core.windows.net/[path]`
+   * - `abfss://[container]@[account].dfs.core.windows.net/[path]` (secure)
+   * - `az://[container]/[path]`
+   * - `adl://[container]/[path]`
+   */
   storageOptions?: StorageBackendOptions;
 }
 
@@ -159,8 +218,13 @@ export class DeltaTable {
 
   /**
    * Create the Delta table from a path with an optional version.
-   * Multiple StorageBackends are currently supported: AWS S3 and local URI.
+   * Multiple StorageBackends are currently supported: AWS S3, Azure ADLS Gen2, and local URI.
    * Depending on the storage backend used, you could provide options values using the `options` parameter.
+   *
+   * Supported URI schemes:
+   * - Local: file:// or relative/absolute paths
+   * - AWS S3: s3://bucket/path or s3a://bucket/path
+   * - Azure: abfs://container@account.dfs.core.windows.net/path, az://container/path, adl://container/path
    *
    * This will not load the log, i.e. the table is not initialized. To get an initialized
    * table use the `load` function.

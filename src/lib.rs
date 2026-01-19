@@ -28,7 +28,7 @@ mod table;
 /// https://github.com/delta-io/delta-rs/blob/0b90a11383dce614be369032062e3e8e78cf95d9/python/src/lib.rs#L2197
 fn init(_: JsObject) -> Result<()> {
   deltalake::aws::register_handlers(None);
-  // deltalake::azure::register_handlers(None);
+  deltalake::azure::register_handlers(None);
   // deltalake::gcp::register_handlers(None);
   // deltalake::hdfs::register_handlers(None);
   // deltalake_mount::register_handlers(None);

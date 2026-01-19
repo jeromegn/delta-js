@@ -23,8 +23,8 @@ export interface DeltaTableOptions {
    * Hence, DeltaTable will be loaded with significant memory reduction.
    */
   withoutFiles?: boolean
-  /** Set options used to initialize storage backend. */
-  storageOptions?: AWSConfigKeyCredentials | AWSConfigKeyProfile
+  /** Set options used to initialize storage backend (AWS S3 or Azure ADLS Gen2). */
+  storageOptions?: StorageOptionsType
 }
 export interface AWSConfigKeyCredentials {
   awsRegion: string
@@ -35,6 +35,38 @@ export interface AWSConfigKeyCredentials {
 export interface AWSConfigKeyProfile {
   awsRegion: string
   awsProfile: string
+}
+/** Azure storage options using storage account key authentication */
+export interface AzureConfigKeyCredentials {
+  /** Azure storage account name */
+  azureStorageAccountName: string
+  /** Azure storage account key */
+  azureStorageAccountKey: string
+}
+/** Azure storage options using SAS token authentication */
+export interface AzureConfigKeySas {
+  /** Azure storage account name */
+  azureStorageAccountName: string
+  /** Azure SAS token */
+  azureStorageSasKey: string
+}
+/** Azure storage options using service principal (client secret) authentication */
+export interface AzureConfigKeyServicePrincipal {
+  /** Azure storage account name */
+  azureStorageAccountName: string
+  /** Azure client/application ID */
+  azureClientId: string
+  /** Azure client secret */
+  azureClientSecret: string
+  /** Azure tenant/authority ID */
+  azureTenantId: string
+}
+/** Azure storage options using Azure CLI authentication */
+export interface AzureConfigKeyAzureCli {
+  /** Azure storage account name */
+  azureStorageAccountName: string
+  /** Use Azure CLI for authentication */
+  azureUseAzureCli: boolean
 }
 export interface DeltaTableMetadata {
   id: string
@@ -147,8 +179,13 @@ export class RawCursor {
 export class RawDeltaTable {
   /**
    * Create the Delta table from a path with an optional version.
-   * Multiple StorageBackends are currently supported: AWS S3 and local URI.
+   * Multiple StorageBackends are currently supported: AWS S3, Azure ADLS Gen2, and local URI.
    * Depending on the storage backend used, you could provide options values using the `options` parameter.
+   *
+   * Supported URI schemes:
+   * - Local: file:// or relative/absolute paths
+   * - AWS S3: s3://bucket/path or s3a://bucket/path
+   * - Azure: abfs://container@account.dfs.core.windows.net/path, az://container/path, adl://container/path
    *
    * This will not load the log, i.e. the table is not initialized. To get an initialized
    * table use the `load` function.
@@ -159,7 +196,7 @@ export class RawDeltaTable {
    * * `options` - an object of the options to use for the storage backend
    */
   constructor(tableUri: string, options?: DeltaTableOptions | undefined | null)
-  static isDeltaTable(tableUri: string, storageOptions?: AWSConfigKeyCredentials | AWSConfigKeyProfile | undefined | null): Promise<boolean>
+  static isDeltaTable(tableUri: string, storageOptions?: StorageOptionsType | undefined | null): Promise<boolean>
   /** Build the DeltaTable and load its state */
   load(): Promise<void>
   tableUri(): string
